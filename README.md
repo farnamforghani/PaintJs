@@ -1,70 +1,26 @@
-# Getting Started with Create React App
+**خلاصه پروژه**
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+این پروژه یک برنامه نقاشی تحت وب است که با استفاده از ری‌اکت و بوت‌استرپ پیاده‌سازی شده است. کاربران می‌توانند اشکال هندسی (مربع، دایره، مثلث) را از نوار کناری کشیده و در بوم نقاشی رها کنند، آن‌ها را جابجا کنند و نقاشی خود را ذخیره یا بارگذاری نمایند.
+در طراحی این پروژه از هوش‌ مصنوعی استفاده شده است
 
-## Available Scripts
+**ویژگی‌های اصلی**
 
-In the project directory, you can run:
+ ۱. رابط کاربری
 
-### `npm start`
+*    هدر: شامل عنوان قابل ویرایش و دکمه‌های ایمپورت/اکسپورت
+*    نوار کناری: حاوی ابزارهای قابل کشیدن (مربع، دایره، مثلث)
+*    بوم اصلی: محل نقاشی و نمایش اشکال
+*    فوتر: نمایش تعداد هر نوع شکل
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+۲. عملکردهای تعاملی
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+*    کشیدن و رها کردن: از نوار کناری به بوم
+*    جابجایی اشکال: کلیک و کشیدن اشکال روی بوم
+*    حذف اشکال: دوبار کلیک روی شکل
+*    ویرایش عنوان: کلیک روی عنوان برای تغییر نام نقاشی
 
-### `npm test`
+**نکات طراحی**
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+* استفاده از سیستم گرید بوت‌استرپ برای طرح‌بندی
+* رنگ‌بندی مطابق با پالت بوت‌استرپ
+* طراحی ریسپانسیو برای دستگاه‌های مختلف
