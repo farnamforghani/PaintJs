@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// --- API URL base (change if needed) ---
 const API_URL = 'http://localhost:8080/api';
 
 const shapeTemplates = {
@@ -11,30 +10,33 @@ const shapeTemplates = {
 };
 
 function PaintingApp() {
-  // User state
-  const [user, setUser] = useState(null); // will be username if logged in
-  const [authMode, setAuthMode] = useState('login'); // or 'signup'
-  const [authInfo, setAuthInfo] = useState({ username: '' }); // Only username needed
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState('login');
+  const [authInfo, setAuthInfo] = useState({ username: '' });
   const [authError, setAuthError] = useState('');
 
-  // Painting state
   const [paintingName, setPaintingName] = useState('My Painting');
   const [isEditingName, setIsEditingName] = useState(false);
   const [shapes, setShapes] = useState([]);
   const [userPaintings, setUserPaintings] = useState([]);
   const [selectedPaintingId, setSelectedPaintingId] = useState(null);
 
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedShapeId, setDraggedShapeId] = useState(null);
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+
   // Drag state
   const [draggedShape, setDraggedShape] = useState(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   // UI refs
   const canvasRef = useRef(null);
-  const fileInputRef = useRef(null);
 
-  // --- Authentication handlers ---
   const handleAuthChange = (e) => {
     setAuthInfo({ ...authInfo, [e.target.name]: e.target.value });
+  };
+
+  const handleShapeDoubleClick = (shapeId) => {
+    setShapes(shapes.filter(shape => shape.id !== shapeId));
   };
 
   const handleAuth = async (e) => {
@@ -48,11 +50,8 @@ function PaintingApp() {
 
     try {
       if (authMode === 'signup') {
-        // For signup - only send username
         const res = await fetch(API_URL + `/users/signup/${encodeURIComponent(authInfo.username.trim())}`, {
           method: 'GET',
-          // headers: { 'Content-Type': 'application/json' },
-          // body: JSON.stringify({ username: authInfo.username.trim() }),
           credentials: 'include'
         });
 
@@ -67,7 +66,6 @@ function PaintingApp() {
         fetchUserPaintings(authInfo.username.trim());
 
       } else {
-        // For login - check if user exists
         const res = await fetch(API_URL + `/users/check/${encodeURIComponent(authInfo.username.trim())}`, {
           method: 'GET',
           credentials: 'include'
@@ -99,8 +97,6 @@ function PaintingApp() {
     setSelectedPaintingId(null);
   };
 
-  // --- Backend Painting API ---
-  // Save
   const handleSave = async () => {
     if (!user) return;
     const paintingData = {
@@ -110,7 +106,6 @@ function PaintingApp() {
       timestamp: new Date(),
       version: 1
     };
-    // Save new painting or update (PUT if selectedPaintingId exists)
     const method = selectedPaintingId ? 'PUT' : 'POST';
     const url = selectedPaintingId
         ? `/paintings/${selectedPaintingId}/user/${encodeURIComponent(user)}`
@@ -128,14 +123,56 @@ function PaintingApp() {
         throw new Error('Failed to save painting');
       }
 
-      fetchUserPaintings(user); // refresh list
+      fetchUserPaintings(user);
       alert('Painting saved!');
     } catch (error) {
       alert('Error saving painting: ' + error.message);
     }
   };
 
-  // Load all user's paintings
+  const handleShapeMouseDown = (e, shapeId) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const shape = shapes.find(s => (s.id || shapes.indexOf(s)) === shapeId);
+
+    setIsDragging(true);
+    setDraggedShapeId(shapeId);
+    setDragStartPos({
+      x: e.clientX - rect.left - shape.x,
+      y: e.clientY - rect.top - shape.y
+    });
+  };
+
+  const handleCanvasMouseMove = (e) => {
+    if (!isDragging || draggedShapeId === null) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const newX = e.clientX - rect.left - dragStartPos.x;
+    const newY = e.clientY - rect.top - dragStartPos.y;
+
+    const canvasWidth = rect.width;
+    const canvasHeight = rect.height;
+    const shape = shapes.find(s => (s.id || shapes.indexOf(s)) === draggedShapeId);
+
+    const boundedX = Math.max(0, Math.min(newX, canvasWidth - shape.width));
+    const boundedY = Math.max(0, Math.min(newY, canvasHeight - shape.height));
+
+    setShapes(shapes.map(s => {
+      const id = s.id || shapes.indexOf(s);
+      return id === draggedShapeId
+          ? { ...s, x: boundedX, y: boundedY }
+          : s;
+    }));
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsDragging(false);
+    setDraggedShapeId(null);
+    setDragStartPos({ x: 0, y: 0 });
+  };
+
   const fetchUserPaintings = async (theUser = user) => {
     if (!theUser) return;
     try {
@@ -153,9 +190,8 @@ function PaintingApp() {
 
   useEffect(() => {
     if (user) fetchUserPaintings();
-  }, [user]);
+  }, [fetchUserPaintings, user]);
 
-  // Load specific painting from backend
   const handleLoadPainting = async (id) => {
     try {
       const res = await fetch(API_URL + `/paintings/${id}/user/${encodeURIComponent(user)}`, {
@@ -173,7 +209,6 @@ function PaintingApp() {
     }
   };
 
-  // --- Canvas: drag and drop ---
   const handleDragStart = (type) => (e) => {
     setDraggedShape({ ...shapeTemplates[type] });
   };
@@ -189,19 +224,16 @@ function PaintingApp() {
 
   const handleDragOver = (e) => e.preventDefault();
 
-  // --- Clear canvas ---
   const handleClearCanvas = () => {
     setShapes([]);
     setSelectedPaintingId(null);
     setPaintingName('My Painting');
   };
 
-  // --- Painting title editing ---
   const handleTitleClick = () => setIsEditingName(true);
   const handleTitleChange = (e) => setPaintingName(e.target.value);
   const handleTitleSubmit = () => setIsEditingName(false);
 
-  // --- Render ---
   if (!user) {
     return (
         <div className="container mt-5" style={{ maxWidth: 400 }}>
@@ -224,38 +256,10 @@ function PaintingApp() {
                 <div className="alert alert-danger py-2">{authError}</div>
             )}
           </form>
-          {/*<div className="mt-3 text-center">*/}
-          {/*  {authMode === 'login' ? (*/}
-          {/*      // <>*/}
-          {/*      //   Don't have an account?{' '}*/}
-          {/*      //   <button*/}
-          {/*      //       className="btn btn-link p-0"*/}
-          {/*      //       onClick={() => {*/}
-          {/*      //         setAuthMode('signup');*/}
-          {/*      //         setAuthError('');*/}
-          {/*      //       }}>*/}
-          {/*      //     Sign up*/}
-          {/*      //   </button>*/}
-          {/*      // </>*/}
-          {/*  ) : (*/}
-          {/*      <>*/}
-          {/*        Already have an account?{' '}*/}
-          {/*        <button*/}
-          {/*            className="btn btn-link p-0"*/}
-          {/*            onClick={() => {*/}
-          {/*              setAuthMode('login');*/}
-          {/*              setAuthError('');*/}
-          {/*            }}>*/}
-          {/*          Log in*/}
-          {/*        </button>*/}
-          {/*      </>*/}
-          {/*  )}*/}
-          {/*</div>*/}
         </div>
     );
   }
 
-  // --- Main app UI when logged in ---
   return (
       <div className="container py-4">
         <div className="d-flex justify-content-between align-items-center mb-3">
@@ -270,11 +274,6 @@ function PaintingApp() {
                 className="btn btn-outline-secondary me-2"
                 onClick={handleClearCanvas}>
               New Painting
-            </button>
-            <button
-                className="btn btn-outline-primary me-2"
-                onClick={() => fetchUserPaintings()}>
-              Refresh
             </button>
             <button className="btn btn-success" onClick={handleSave}>
               Save Painting
@@ -298,7 +297,6 @@ function PaintingApp() {
           )}
         </h2>
 
-        {/* Paintings list */}
         {userPaintings.length > 0 && (
             <div className="mb-3">
               <strong>My Paintings: </strong>
@@ -318,7 +316,6 @@ function PaintingApp() {
         )}
 
         <div className="row">
-          {/* Sidebar for shape tools */}
           <div className="col-md-2">
             <div className="mb-3">
               <strong>Shape Tools</strong>
@@ -351,18 +348,21 @@ function PaintingApp() {
             </div>
           </div>
 
-          {/* Canvas */}
           <div className="col-md-10">
             <div
                 ref={canvasRef}
                 onDragOver={handleDragOver}
                 onDrop={handleCanvasDrop}
+                onMouseMove={handleCanvasMouseMove}
+                onMouseUp={handleCanvasMouseUp}
+                onMouseLeave={handleCanvasMouseUp}
                 style={{
                   position: 'relative',
                   height: 500,
                   border: '2px solid #444',
                   background: '#f8f9fa',
-                  borderRadius: '8px'
+                  borderRadius: '8px',
+                  userSelect: 'none'
                 }}>
               {shapes.length === 0 && (
                   <div
@@ -374,6 +374,8 @@ function PaintingApp() {
               {shapes.map((s, idx) => (
                   <div
                       key={s.id || idx}
+                      onDoubleClick={() => handleShapeDoubleClick(s.id || idx)}
+                      onMouseDown={(e) => handleShapeMouseDown(e, s.id || idx)}
                       style={{
                         position: 'absolute',
                         left: s.x, top: s.y,
@@ -383,11 +385,11 @@ function PaintingApp() {
                         clipPath: s.type === 'triangle'
                             ? 'polygon(50% 10%, 10% 90%, 90% 90%)'
                             : 'none',
-                        //border: '2px solid #333',
-                        cursor: 'move',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        cursor: isDragging && draggedShapeId === (s.id || idx) ? 'grabbing' : 'grab',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                        zIndex: isDragging && draggedShapeId === (s.id || idx) ? 1000 : 1
                       }}
-                      title={`${s.type} shape`}
+                      title={`${s.type} shape (drag to move, double-click to delete)`}
                   />
               ))}
             </div>
