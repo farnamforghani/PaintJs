@@ -1,376 +1,400 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { useState, useRef } from 'react';
 
-const PaintingApp = () => {
-  const [shapes, setShapes] = useState([]);
-  const [draggedShape, setDraggedShape] = useState(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+// --- API URL base (change if needed) ---
+const API_URL = 'http://localhost:8080/api';
+
+const shapeTemplates = {
+  square: { type: 'square', width: 60, height: 60, color: '#007bff' },
+  circle: { type: 'circle', width: 60, height: 60, color: '#28a745' },
+  triangle: { type: 'triangle', width: 60, height: 60, color: '#ffc107' },
+};
+
+function PaintingApp() {
+  // User state
+  const [user, setUser] = useState(null); // will be username if logged in
+  const [authMode, setAuthMode] = useState('login'); // or 'signup'
+  const [authInfo, setAuthInfo] = useState({ username: '' }); // Only username needed
+  const [authError, setAuthError] = useState('');
+
+  // Painting state
   const [paintingName, setPaintingName] = useState('My Painting');
   const [isEditingName, setIsEditingName] = useState(false);
+  const [shapes, setShapes] = useState([]);
+  const [userPaintings, setUserPaintings] = useState([]);
+  const [selectedPaintingId, setSelectedPaintingId] = useState(null);
+
+  // Drag state
+  const [draggedShape, setDraggedShape] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  // UI refs
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
-  const nameInputRef = useRef(null);
 
-  const shapeTemplates = {
-    square: { type: 'square', width: 60, height: 60, color: '#007bff' },
-    circle: { type: 'circle', width: 60, height: 60, color: '#dc3545' },
-    triangle: { type: 'triangle', width: 60, height: 60, color: '#28a745' }
+  // --- Authentication handlers ---
+  const handleAuthChange = (e) => {
+    setAuthInfo({ ...authInfo, [e.target.name]: e.target.value });
   };
 
-  const handleDragStart = (e, shapeType) => {
-    setDraggedShape(shapeType);
-    e.dataTransfer.effectAllowed = 'copy';
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (!authInfo.username.trim()) {
+      setAuthError('Username is required');
+      return;
+    }
+
+    try {
+      if (authMode === 'signup') {
+        // For signup - only send username
+        const res = await fetch(API_URL + `/users/signup/${encodeURIComponent(authInfo.username.trim())}`, {
+          method: 'GET',
+          // headers: { 'Content-Type': 'application/json' },
+          // body: JSON.stringify({ username: authInfo.username.trim() }),
+          credentials: 'include'
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || 'Signup failed');
+        }
+
+        const data = await res.json();
+        setUser(authInfo.username.trim());
+        setAuthInfo({ username: '' });
+        fetchUserPaintings(authInfo.username.trim());
+
+      } else {
+        // For login - check if user exists
+        const res = await fetch(API_URL + `/users/check/${encodeURIComponent(authInfo.username.trim())}`, {
+          method: 'GET',
+          credentials: 'include'
+        });
+
+        if (!res.ok) {
+          throw new Error('Login failed');
+        }
+
+        const data = await res.json();
+        if (data.exists) {
+          setUser(authInfo.username.trim());
+          setAuthInfo({ username: '' });
+          fetchUserPaintings(authInfo.username.trim());
+        } else {
+          throw new Error('User does not exist');
+        }
+      }
+    } catch (ex) {
+      setAuthError(ex.message);
+    }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setShapes([]);
+    setPaintingName('My Painting');
+    setUserPaintings([]);
+    setSelectedPaintingId(null);
+  };
+
+  // --- Backend Painting API ---
+  // Save
+  const handleSave = async () => {
+    if (!user) return;
+    const paintingData = {
+      name: paintingName,
+      shapes,
+      owner: user,
+      timestamp: new Date(),
+      version: 1
+    };
+    // Save new painting or update (PUT if selectedPaintingId exists)
+    const method = selectedPaintingId ? 'PUT' : 'POST';
+    const url = selectedPaintingId
+        ? `/paintings/${selectedPaintingId}/user/${encodeURIComponent(user)}`
+        : `/paintings/user/${encodeURIComponent(user)}`;
+
+    try {
+      const res = await fetch(API_URL + url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paintingData),
+        credentials: 'include'
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to save painting');
+      }
+
+      fetchUserPaintings(user); // refresh list
+      alert('Painting saved!');
+    } catch (error) {
+      alert('Error saving painting: ' + error.message);
+    }
+  };
+
+  // Load all user's paintings
+  const fetchUserPaintings = async (theUser = user) => {
+    if (!theUser) return;
+    try {
+      const res = await fetch(
+          API_URL + `/paintings/user/${encodeURIComponent(theUser)}`,
+          { credentials: 'include' }
+      );
+      if (res.ok) {
+        setUserPaintings(await res.json());
+      }
+    } catch (error) {
+      console.error('Error fetching paintings:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (user) fetchUserPaintings();
+  }, [user]);
+
+  // Load specific painting from backend
+  const handleLoadPainting = async (id) => {
+    try {
+      const res = await fetch(API_URL + `/paintings/${id}/user/${encodeURIComponent(user)}`, {
+        credentials: 'include'
+      });
+      if (!res.ok) {
+        throw new Error('Failed to load painting');
+      }
+      const paintingData = await res.json();
+      setPaintingName(paintingData.name);
+      setShapes(paintingData.shapes || []);
+      setSelectedPaintingId(id);
+    } catch (error) {
+      alert('Error loading painting: ' + error.message);
+    }
+  };
+
+  // --- Canvas: drag and drop ---
+  const handleDragStart = (type) => (e) => {
+    setDraggedShape({ ...shapeTemplates[type] });
   };
 
   const handleCanvasDrop = (e) => {
-    e.preventDefault();
     if (!draggedShape) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left - 30;
-    const y = e.clientY - rect.top - 30;
-    const newShape = {
-      ...shapeTemplates[draggedShape],
-      id: Date.now() + Math.random(),
-      x,
-      y
-    };
-    setShapes(prev => [...prev, newShape]);
+    const canvasRect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - canvasRect.left - 30;
+    const y = e.clientY - canvasRect.top - 30;
+    setShapes([...shapes, { ...draggedShape, x, y, id: Date.now() }]);
     setDraggedShape(null);
   };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
+  const handleDragOver = (e) => e.preventDefault();
+
+  // --- Clear canvas ---
+  const handleClearCanvas = () => {
+    setShapes([]);
+    setSelectedPaintingId(null);
+    setPaintingName('My Painting');
   };
 
-  const handleShapeMouseDown = (e, shape) => {
-    e.preventDefault();
-    const rect = canvasRef.current.getBoundingClientRect();
-    setDragOffset({
-      x: e.clientX - rect.left - shape.x,
-      y: e.clientY - rect.top - shape.y
-    });
-    setDraggedShape(shape.id);
-  };
+  // --- Painting title editing ---
+  const handleTitleClick = () => setIsEditingName(true);
+  const handleTitleChange = (e) => setPaintingName(e.target.value);
+  const handleTitleSubmit = () => setIsEditingName(false);
 
-  const handleCanvasMouseMove = (e) => {
-    if (draggedShape && typeof draggedShape === 'number') {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left - dragOffset.x;
-      const y = e.clientY - rect.top - dragOffset.y;
-      setShapes(prev =>
-          prev.map(shape =>
-              shape.id === draggedShape ? { ...shape, x, y } : shape
-          )
-      );
-    }
-  };
-
-  const handleMouseUp = () => {
-    setDraggedShape(null);
-    setDragOffset({ x: 0, y: 0 });
-  };
-
-  const handleShapeDoubleClick = (shapeId) => {
-    setShapes(prev => prev.filter(shape => shape.id !== shapeId));
-  };
-
-  const handleTitleClick = () => {
-    setIsEditingName(true);
-    setTimeout(() => nameInputRef.current?.focus(), 0);
-  };
-
-  const handleTitleChange = (e) => {
-    setPaintingName(e.target.value);
-  };
-
-  const handleTitleSubmit = () => {
-    if (paintingName.trim() === '') {
-      setPaintingName('My Painting');
-    }
-    setIsEditingName(false);
-  };
-
-  const handleTitleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      handleTitleSubmit();
-    }
-  };
-
-  const shapeCounts = shapes.reduce((acc, shape) => {
-    acc[shape.type] = (acc[shape.type] || 0) + 1;
-    return acc;
-  }, {});
-
-  const handleExport = () => {
-    const paintingData = {
-      name: paintingName,
-      shapes: shapes,
-      timestamp: new Date().toISOString(),
-      version: '1.0'
-    };
-    const dataStr = JSON.stringify(paintingData, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const sanitizedName = paintingName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    const filename = `${sanitizedName}_${Date.now()}.json`;
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(dataBlob);
-    link.download = filename;
-    link.click();
-  };
-
-  const handleImport = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type === 'application/json') {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const paintingData = JSON.parse(event.target.result);
-          if (paintingData.shapes && Array.isArray(paintingData.shapes)) {
-            setShapes(paintingData.shapes);
-
-            if (paintingData.name) {
-              setPaintingName(paintingData.name);
-            }
-          } else {
-            alert('Invalid painting file format');
-          }
-        } catch (error) {
-          alert('Error reading file: ' + error.message);
-        }
-      };
-      reader.readAsText(file);
-    } else {
-      alert('Please select a valid JSON file');
-    }
-    e.target.value = '';
-  };
-
-  const renderShape = (shape) => {
-    const commonProps = {
-      key: shape.id,
-      onMouseDown: (e) => handleShapeMouseDown(e, shape),
-      onDoubleClick: () => handleShapeDoubleClick(shape.id),
-      style: {
-        position: 'absolute',
-        left: shape.x,
-        top: shape.y,
-        width: shape.width,
-        height: shape.height,
-        backgroundColor: shape.color,
-        cursor: 'move',
-        userSelect: 'none'
-      }
-    };
-
-    switch (shape.type) {
-      case 'square':
-        return <div {...commonProps} />;
-      case 'circle':
-        return <div {...commonProps} style={{ ...commonProps.style, borderRadius: '50%' }} />;
-      case 'triangle':
-        return (
-            <div
-                {...commonProps}
-                style={{
-                  ...commonProps.style,
-                  backgroundColor: 'transparent',
-                  width: 0,
-                  height: 0,
-                  borderLeft: `${shape.width / 2}px solid transparent`,
-                  borderRight: `${shape.width / 2}px solid transparent`,
-                  borderBottom: `${shape.height}px solid ${shape.color}`
-                }}
+  // --- Render ---
+  if (!user) {
+    return (
+        <div className="container mt-5" style={{ maxWidth: 400 }}>
+          <h2 className="mb-3 text-center">
+            {authMode === 'signup' ? 'Sign Up' : 'Log In'}
+          </h2>
+          <form onSubmit={handleAuth}>
+            <input
+                className="form-control mb-3"
+                name="username"
+                value={authInfo.username}
+                onChange={handleAuthChange}
+                placeholder="Enter username"
+                required
             />
-        );
-      default:
-        return null;
-    }
-  };
+            <button className="btn btn-primary w-100 mb-2" type="submit">
+              {authMode === 'signup' ? 'Sign Up' : 'Log In'}
+            </button>
+            {authError && (
+                <div className="alert alert-danger py-2">{authError}</div>
+            )}
+          </form>
+          {/*<div className="mt-3 text-center">*/}
+          {/*  {authMode === 'login' ? (*/}
+          {/*      // <>*/}
+          {/*      //   Don't have an account?{' '}*/}
+          {/*      //   <button*/}
+          {/*      //       className="btn btn-link p-0"*/}
+          {/*      //       onClick={() => {*/}
+          {/*      //         setAuthMode('signup');*/}
+          {/*      //         setAuthError('');*/}
+          {/*      //       }}>*/}
+          {/*      //     Sign up*/}
+          {/*      //   </button>*/}
+          {/*      // </>*/}
+          {/*  ) : (*/}
+          {/*      <>*/}
+          {/*        Already have an account?{' '}*/}
+          {/*        <button*/}
+          {/*            className="btn btn-link p-0"*/}
+          {/*            onClick={() => {*/}
+          {/*              setAuthMode('login');*/}
+          {/*              setAuthError('');*/}
+          {/*            }}>*/}
+          {/*          Log in*/}
+          {/*        </button>*/}
+          {/*      </>*/}
+          {/*  )}*/}
+          {/*</div>*/}
+        </div>
+    );
+  }
 
+  // --- Main app UI when logged in ---
   return (
-      <>
-        <div className="vh-100 d-flex flex-column bg-light">
-          <header className="bg-light shadow-sm border-bottom">
-            <div className="container-fluid px-4 py-3">
-              <div className="row align-items-center">
-                <div className="col">
-                  {isEditingName ? (
-                      <input
-                          ref={nameInputRef}
-                          type="text"
-                          value={paintingName}
-                          onChange={handleTitleChange}
-                          onBlur={handleTitleSubmit}
-                          onKeyPress={handleTitleKeyPress}
-                          className="form-control form-control-lg fw-bold border-0 px-0"
-                          style={{ fontSize: '1.5rem' }}
-                      />
-                  ) : (
-                      <h1
-                          className="h2 mb-0 text-dark fw-bold"
-                          onClick={handleTitleClick}
-                          style={{ cursor: 'pointer' }}
-                          title="Click to edit painting name"
-                      >
-                        {paintingName}
-                      </h1>
-                  )}
-                </div>
-                <div className="col-auto">
-                  <div className="btn-group">
-                    <button
-                        onClick={handleImport}
-                        className="btn btn-primary me-2"
-                    >
-                      Import
-                    </button>
-                    <button
-                        onClick={handleExport}
-                        className="btn btn-success"
-                    >
-                      Export
-                    </button>
-                  </div>
+      <div className="container py-4">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <span className="me-4">Logged in as: <b>{user}</b></span>
+            <button className="btn btn-sm btn-secondary" onClick={handleLogout}>
+              Log out
+            </button>
+          </div>
+          <div className="d-flex align-items-center">
+            <button
+                className="btn btn-outline-secondary me-2"
+                onClick={handleClearCanvas}>
+              New Painting
+            </button>
+            <button
+                className="btn btn-outline-primary me-2"
+                onClick={() => fetchUserPaintings()}>
+              Refresh
+            </button>
+            <button className="btn btn-success" onClick={handleSave}>
+              Save Painting
+            </button>
+          </div>
+        </div>
+
+        <h2 onClick={handleTitleClick} style={{ cursor: 'pointer' }}>
+          {isEditingName ? (
+              <input
+                  value={paintingName}
+                  onBlur={handleTitleSubmit}
+                  onChange={handleTitleChange}
+                  onKeyDown={e => e.key === 'Enter' && handleTitleSubmit()}
+                  autoFocus
+                  style={{ fontSize: '1.5rem' }}
+                  className="form-control"
+              />
+          ) : (
+              <span className="text-primary">{paintingName}</span>
+          )}
+        </h2>
+
+        {/* Paintings list */}
+        {userPaintings.length > 0 && (
+            <div className="mb-3">
+              <strong>My Paintings: </strong>
+              {userPaintings.map((p) => (
+                  <button
+                      key={p.id}
+                      className={`btn btn-sm mx-1 ${
+                          selectedPaintingId === p.id
+                              ? 'btn-primary'
+                              : 'btn-outline-primary'
+                      }`}
+                      onClick={() => handleLoadPainting(p.id)}>
+                    {p.name}
+                  </button>
+              ))}
+            </div>
+        )}
+
+        <div className="row">
+          {/* Sidebar for shape tools */}
+          <div className="col-md-2">
+            <div className="mb-3">
+              <strong>Shape Tools</strong>
+              <div className="mt-2">
+                {Object.keys(shapeTemplates).map((type) => (
+                    <div
+                        key={type}
+                        className="mb-2 d-flex align-items-center justify-content-center"
+                        draggable
+                        onDragStart={handleDragStart(type)}
+                        style={{
+                          cursor: 'grab',
+                          width: 50, height: 50,
+                          // border: '2px solid #ddd',
+                          background: shapeTemplates[type].color,
+                          borderRadius: type === 'circle' ? '50%' : '4px',
+                          clipPath: type === 'triangle'
+                              ? 'polygon(50% 10%, 10% 90%, 90% 90%)'
+                              : 'none'
+                        }}
+                        title={`Drag ${type} to canvas`}
+                    />
+                ))}
+                <div className="mt-2">
+                  <small className="text-muted">
+                    Drag shapes to the canvas
+                  </small>
                 </div>
               </div>
             </div>
-          </header>
-
-          <div className="row flex-fill g-0">
-            <aside
-                className="col-auto bg-white border-end shadow-sm d-flex flex-column align-items-center py-4"
-                style={{ width: '80px' }}
-            >
-              <div className="small fw-medium text-muted mb-3">Tools</div>
-              <div
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, 'square')}
-                  className="mb-3"
-                  style={{
-                    width: '48px',
-                    height: '48px',
-                    backgroundColor: '#007bff',
-                    cursor: 'grab'
-                  }}
-                  title="Square"
-                  onMouseEnter={e => e.target.style.backgroundColor = '#0056b3'}
-                  onMouseLeave={e => e.target.style.backgroundColor = '#007bff'}
-              />
-              <div
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, 'circle')}
-                  className="mb-3 rounded-circle"
-                  style={{
-                    width: '48px',
-                    height: '48px',
-                    backgroundColor: '#dc3545',
-                    cursor: 'grab'
-                  }}
-                  title="Circle"
-                  onMouseEnter={e => e.target.style.backgroundColor = '#b02a37'}
-                  onMouseLeave={e => e.target.style.backgroundColor = '#dc3545'}
-              />
-              <div
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, 'triangle')}
-                  style={{
-                    width: 0,
-                    height: 0,
-                    borderLeft: '24px solid transparent',
-                    borderRight: '24px solid transparent',
-                    borderBottom: '48px solid #28a745',
-                    cursor: 'grab'
-                  }}
-                  title="Triangle"
-                  onMouseEnter={e => e.target.style.opacity = '0.8'}
-                  onMouseLeave={e => e.target.style.opacity = '1'}
-              />
-            </aside>
-
-            <main className="col position-relative overflow-hidden">
-              <div
-                  ref={canvasRef}
-                  className="w-100 h-100 bg-white position-relative"
-                  style={{ minHeight: '400px' }}
-                  onDrop={handleCanvasDrop}
-                  onDragOver={handleDragOver}
-                  onMouseMove={handleCanvasMouseMove}
-                  onMouseUp={handleMouseUp}
-                  onMouseLeave={handleMouseUp}
-              >
-                {shapes.map(renderShape)}
-
-                {shapes.length === 0 && (
-                    <div className="position-absolute top-50 start-50 translate-middle text-muted fs-5" style={{ pointerEvents: 'none' }}>
-                      Drag shapes from the sidebar to start painting
-                    </div>
-                )}
-              </div>
-            </main>
           </div>
 
-          <footer className="bg-white border-top">
-            <div className="container-fluid px-4 py-2">
-              <div className="row align-items-center">
-                <div className="col-auto">
-                  <span className="small fw-medium text-muted">Shape Count:</span>
-                </div>
-                <div className="col d-flex gap-4">
-                <span className="small d-flex align-items-center">
+          {/* Canvas */}
+          <div className="col-md-10">
+            <div
+                ref={canvasRef}
+                onDragOver={handleDragOver}
+                onDrop={handleCanvasDrop}
+                style={{
+                  position: 'relative',
+                  height: 500,
+                  border: '2px solid #444',
+                  background: '#f8f9fa',
+                  borderRadius: '8px'
+                }}>
+              {shapes.length === 0 && (
                   <div
-                      className="me-2"
-                      style={{
-                        width: '12px',
-                        height: '12px',
-                        backgroundColor: '#007bff'
-                      }}
-                  ></div>
-                  Square: {shapeCounts.square || 0}
-                </span>
-                  <span className="small d-flex align-items-center">
+                      className="d-flex align-items-center justify-content-center h-100 text-muted"
+                      style={{ fontSize: '1.2rem' }}>
+                    Drag shapes from the sidebar to start painting!
+                  </div>
+              )}
+              {shapes.map((s, idx) => (
                   <div
-                      className="me-2 rounded-circle"
+                      key={s.id || idx}
                       style={{
-                        width: '12px',
-                        height: '12px',
-                        backgroundColor: '#dc3545'
+                        position: 'absolute',
+                        left: s.x, top: s.y,
+                        width: s.width, height: s.height,
+                        background: s.color,
+                        borderRadius: s.type === 'circle' ? '50%' : '4px',
+                        clipPath: s.type === 'triangle'
+                            ? 'polygon(50% 10%, 10% 90%, 90% 90%)'
+                            : 'none',
+                        //border: '2px solid #333',
+                        cursor: 'move',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                       }}
-                  ></div>
-                  Circle: {shapeCounts.circle || 0}
-                </span>
-                  <span className="small d-flex align-items-center">
-                  <div
-                      className="me-2"
-                      style={{
-                        width: 0,
-                        height: 0,
-                        borderLeft: '6px solid transparent',
-                        borderRight: '6px solid transparent',
-                        borderBottom: '12px solid #28a745'
-                      }}
-                  ></div>
-                  Triangle: {shapeCounts.triangle || 0}
-                </span>
-                </div>
-              </div>
+                      title={`${s.type} shape`}
+                  />
+              ))}
             </div>
-          </footer>
-
-          <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleFileChange}
-              className="d-none"
-          />
+          </div>
         </div>
-      </>
+      </div>
   );
-};
+}
 
 export default PaintingApp;
